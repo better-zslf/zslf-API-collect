@@ -1,0 +1,2606 @@
+openapi: 3.0.3
+info:
+  title: 掌上莲峰（zslf）API
+  version: 1.0.0
+  description: "# 掌上莲峰（zslf）API 文档\n\n电子科技大学中山学院「掌上莲峰」App 的完整 HTTP API 集合。\n\n> **本文档的所有结论均经过对生产后端的真实请求验证**，不是纯静态推断。\n\
+    > 采集对象：`zslf.apk`（sha256 `416b4524321d6ab1dc6884b230b4fffd87fbf594143f99345abf2f815253fc92`，\n> 版本\
+    \ `1.0.83` / `10089`，包名 `com.zx.slm`）。\n\n---\n\n## \U0001F4CA 覆盖情况\n\n| 指标 | 数值 |\n|---|---|\n| 收录接口\
+    \ | **89** 个 path / method |\n| 已实测验证 | **87** 个（97.8%） |\n| 未实测 | 2 个（`/member/user/*`，预留死接口，全包零调用点）\
+    \ |\n| 接口分组 | **25** 个 |\n\n---\n\n## \U0001F680 快速上手\n\n### 第 1 步：登录拿 token\n\n```http\nPOST https://zslf.zsc.edu.cn/app/login?username=<学号>&password=<口令>\n\
+    ```\n\n响应 `data.accessToken` 就是 token（**UUID v4 格式**）。\n\n### 第 2 步：带上 token 调其它接口\n\n```http\nGET\
+    \ https://zslf.zsc.edu.cn/app/appUser/getUserInfo\nAuthorization: <accessToken>\n```\n\n就这一个头。**不用加\
+    \ `Bearer ` 前缀**，服务端只认裸值。\n\n### 完整示例（curl）\n\n```bash\n# 1. 登录\ncurl -X POST 'https://zslf.zsc.edu.cn/app/login?username=YOUR_ID&password=YOUR_PASS'\n\
+    \n# 2. 用返回的 accessToken 查用户信息\ncurl 'https://zslf.zsc.edu.cn/app/appUser/getUserInfo' \\\n  -H 'Authorization:\
+    \ <accessToken>'\n\n# 3. 查未读消息\ncurl -X POST 'https://zslf.zsc.edu.cn/app/appNotice/unreadNumber'\
+    \ \\\n  -H 'Authorization: <accessToken>'\n```\n\n---\n\n## \U0001F4D0 通用约定\n\n### Base URL\n\n| 用途\
+    \ | Base |\n|---|---|\n| 绝大多数业务接口 | `https://zslf.zsc.edu.cn/app` |\n| **`/run/*` 一组（运动/场馆/体测）** |\
+    \ `https://zslf.zsc.edu.cn`（**没有 `/app` 前缀**） |\n\n> 这是最容易踩的坑：`/run/errand/getErrandList` 的完整地址是\n\
+    > `https://zslf.zsc.edu.cn/run/errand/getErrandList`，**不是** `/app/run/...`。\n\n### 鉴权\n\n| 项 | 约定\
+    \ |\n|---|---|\n| Header | `Authorization: <accessToken>` |\n| 格式 | **裸 token，无 `Bearer ` 前缀** |\n\
+    | token 形态 | UUID v4（形如 `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`），**不是 JWT** |\n| 服务端校验 | **严格**。5 种无效\
+    \ token 实测全部返回 **HTTP 401** |\n| 刷新机制 | **不存在**。登录响应里没有 `refreshToken` 字段，也没有刷新端点；过期只能重新登录 |\n| 请求头宽松度\
+    \ | 实测**只需 `Authorization` 一个头**；`Accept` / `platform` / `appVersion` / `Content-Type` 全部可选且不校验值 |\n\
+    \n### 参数位置\n\n| 位置 | 适用范围 |\n|---|---|\n| **URL query string** | 绝大多数接口（登录、改密、列表查询…） |\n| **JSON body**\
+    \ | 仅 5 个：`/run/errand/{quickSave,syncSportData,reportLocation,addErrandTrackByData}`、`/mobileLogReport/addLog`\
+    \ |\n| **multipart/form-data** | 仅上传接口 |\n\n### 响应信封\n\n```json\n{\n  \"code\": 200,\n  \"data\":\
+    \ {},\n  \"message\": \"获取用户信息成功\",\n  \"success\": true\n}\n```\n\n| 字段 | 说明 |\n|---|---|\n| `code`\
+    \ | **业务状态码**，`200` = 成功 |\n| `data` | 业务数据；**失败时是空字符串 `\"\"`**（不是 `null`） |\n| `message` | 中文提示 |\n\
+    | `success` | 与 `code` 语义一致，客户端从不读取 |\n\n### ⚠️ 两层错误处理（必读）\n\n```text\nHTTP 401  →  未登录 / token 失效\
+    \          → 跳登录页\nHTTP 200  →  再看 body.code\n              code === 200  →  成功\n              code\
+    \ !== 200  →  失败，展示 body.message\n```\n\n**业务错误仍然是 HTTP 200。** 只判 HTTP 状态码会漏掉所有业务错误。\n\n---\n\n##\
+    \ \U0001F4DA 接口分组\n\n- **`auth`** — 登录鉴权\n- **`appUser`** — 用户资料、头像、密码\n- **`appNotice`** — 站内通知、未读数\n\
+    - **`announcement`** — 校园公告\n- **`appFind`** — 发现页菜单、配置字典\n- **`appCmsColumn`** — CMS 栏目\n- **`appCmsArticle`**\
+    \ — CMS 文章、详情、阅读数\n- **`appCmsArticleLike`** — 文章点赞\n- **`adApi`** — 首页轮播图\n- **`business`** — 周边商家与活动\n\
+    - **`appRecruit`** — 兼职招聘\n- **`appRecommend`** — 广场帖子 / 兼职推荐\n- **`recycle`** — 二手物品（闲置）\n- **`questionNaire`**\
+    \ — 调查问卷\n- **`imChat`** — 在线客服\n- **`AppOperator`** — 校园宽带套餐\n- **`appFeedback`** — 意见反馈\n- **`mobileLogReport`**\
+    \ — 客户端日志上报\n- **`run`** — 运动 / 场馆预约 / 体测（**无 `/app` 前缀**）\n- **`sign`** — 签到与积分\n- **`verification`**\
+    \ — 校园网认证\n- **`campusNetwork`** — 校园网 / 宽带账号\n- **`upload`** — 文件上传\n- **`version`** — 版本更新\n- **`member`**\
+    \ — 新版用户中心（预留，未启用）\n\n---\n\n## \U0001F517 常用调用链\n\n### 校园动态（首页）\n\n```text\nPOST /app/appCmsColumn/getCmsByModule?name=学校动态\n\
+    \  → data.cmsColumn.id\nPOST /app/appCmsArticle/getCmsArticleByColumnId?cmsCloumnId=<id>&offset=0&limit=10\n\
+    \  → data.cmsArticleList[]\nPOST /app/appCmsArticle/articleDetailsById?articleId=<id>\n  → data.articleDetails.content（HTML\
+    \ 正文）\n```\n\n### 签到积分\n\n```text\nPOST /app/sign/getUserSign        近 7 天签到日历\nPOST /app/sign/getSumIntegral\
+    \     总积分\nPOST /app/sign/getIntegralDetailByUserId?userId=<uid>   积分明细\n```\n\n### 校园跑\n\n```text\n\
+    POST /run/errand/getErrandList?userId=<uid>&offset=0&limit=10&isFinish=0\nPOST /run/errand/getTrackByTrid?trid=<trid>\
+    \          轨迹点\nPOST /run/errand/syncSportData                       JSON body，必填 trid\n```\n\n###\
+    \ 功能配置\n\n```text\nPOST /app/appFind/getDictTips?code=schoolRun&num=1           校园跑开关\nPOST /app/appFind/getDictTips?code=attendanceRadius&num=1\
+    \    签到半径（实测 40 米）\n```\n\n---\n\n## ⚠️ 已知服务端问题\n\n以下为实测发现的服务端行为，复刻客户端时**需要自行规避**：\n\n| 问题 | 影响接口\
+    \ |\n|---|---|\n| 空参直接返回 **HTTP 500**（无参数校验） | `/sign/addUserSign`、`/run/site/addApplySelectTime`、`/run/site/getApplyDetail`\
+    \ |\n| 异常栈直接返回给客户端 | `/run/physical/getPhysicalTestList`、`/run/site/addSiteApplyRelated` |\n| `POST\
+    \ /appUser/resetNewPassWord` **不需旧密码/验证码** | 仅凭 `userId` 即可改密 |\n| `POST /campusNetwork/getOperatorAccountByIDCard`\
+    \ **无参即返回宽带账号** | PII 泄露 |\n| 口令明文走 URL query | `/login`、`/appUser/modifyPassword`、`/appUser/resetNewPassWord`\
+    \ |\n| 响应键名拼写错误 | `getInternetInfo` 返回 `massage`（应为 message）；`getRecycleTypeList` / `getPhysicalRelatedItemsList`\
+    \ 等响应键带 `get` 前缀 |\n| 参数名拼写错误 | `cmsCloumnId`（少一个 n）、`addApplyDenfition` |\n\n---\n\n## \U0001F5A5\
+    \ 服务端技术栈\n\n从异常栈泄漏信息得出：\n\n| 组件 | 版本 / 说明 |\n|---|---|\n| 应用服务器 | Apache Tomcat，`/usr/local/tomcat/webapps/ROOT`\
+    \ |\n| 框架 | Spring + MyBatis |\n| 连接池 | Alibaba Druid（`maxActive 50`） |\n| 脚手架 | **Guns**（`cn.stylefeng.guns`）\
+    \ |\n| 数据库 | MySQL（由 Druid/MyBatis 栈推断） |\n\n⇒ 参数就是普通 query / form 参数，无需按 REST 风格猜测。\n\n---\n\n##\
+    \ \U0001F4D6 延伸阅读\n\n- 完整逆向分析文档集：[github.com/better-zslf](https://github.com/better-zslf)\n- API 实测手册：`docs/13-api-live-testing.md`\n\
+    - 本规范源码：[github.com/better-zslf/zslf-API-collect](https://github.com/better-zslf/zslf-API-collect)\n\
+    \n---\n\n*本文档由自动化逆向分析 + 真实请求实测生成。仅收录接口契约信息，不含任何用户凭据或个人身份数据。*\n"
+  contact:
+    name: better-zslf
+    url: https://github.com/better-zslf/zslf-API-collect
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+externalDocs:
+  description: 完整逆向分析文档集
+  url: https://github.com/better-zslf/zslf-API-collect
+servers:
+- url: https://zslf.zsc.edu.cn/app
+  description: 业务接口（/app 前缀）
+- url: https://zslf.zsc.edu.cn
+  description: 运动 / 场馆 / 体测（/run/*，无 /app 前缀）
+tags:
+- name: AppOperator
+  description: 校园宽带套餐
+- name: adApi
+  description: 首页轮播图
+- name: announcement
+  description: 校园公告
+- name: appCmsArticle
+  description: CMS 文章与详情
+- name: appCmsArticleLike
+  description: 文章点赞
+- name: appCmsColumn
+  description: CMS 栏目
+- name: appFeedback
+  description: 意见反馈
+- name: appFind
+  description: 发现页菜单与配置字典
+- name: appNotice
+  description: 站内通知与未读数
+- name: appRecommend
+  description: 广场帖子与推荐
+- name: appRecruit
+  description: 兼职招聘
+- name: appUser
+  description: 用户资料、头像、密码
+- name: auth
+  description: 登录鉴权
+- name: business
+  description: 周边商家与活动
+- name: campusNetwork
+  description: 校园网 / 宽带账号
+- name: imChat
+  description: 在线客服
+- name: member
+  description: 新版用户中心（预留未启用）
+- name: mobileLogReport
+  description: 客户端日志上报
+- name: questionNaire
+  description: 调查问卷
+- name: recycle
+  description: 二手物品（闲置）
+- name: run
+  description: 运动 / 场馆预约 / 体测（base 无 /app 前缀）
+- name: sign
+  description: 签到与积分
+- name: upload
+  description: 文件上传
+- name: verification
+  description: 校园网认证
+- name: version
+  description: 版本更新
+paths:
+  /login:
+    post:
+      tags:
+      - auth
+      summary: 账号密码登录
+      description: '登录并获取 `accessToken`。
+
+
+        **要点**：
+
+        - 口令以**明文**放在 URL query 中（服务端设计如此，非本文档选择）
+
+        - 响应 `data.accessToken` 是 **UUID v4**，后续请求放在 `Authorization` 头（裸值，无 `Bearer`）
+
+        - 响应**没有** `refreshToken` 字段，也没有刷新端点；token 失效只能重新登录
+
+        - `mapWebType` / `mapToken` 是服务端下发的地图配置，客户端应优先用它'
+      operationId: post_login
+      parameters:
+      - name: username
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 学号 / 账号
+      - name: password
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 明文口令
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: &id001
+                type: object
+                required:
+                - code
+                - success
+                properties:
+                  code:
+                    type: integer
+                    description: 业务状态码，`200` = 成功
+                    example: 200
+                  data:
+                    description: 业务数据；**失败时是空字符串 `""`**
+                    nullable: true
+                  message:
+                    type: string
+                    description: 中文提示信息
+                    example: 获取用户信息成功
+                  success:
+                    type: boolean
+                    description: 与 `code` 语义一致（客户端从不读取）
+                    example: true
+              examples:
+                login_ok:
+                  summary: 登录成功
+                  value:
+                    code: 200
+                    data:
+                      userInfo:
+                        id: <userId>
+                        account: <学号>
+                        newAccount: ''
+                        avatar: ''
+                        name: <姓名>
+                        nickname: 用户_xxxxxxxx
+                        number: ''
+                        phone: ''
+                        sex: 1
+                        birthday: ''
+                        email: ''
+                        type: 0
+                        status: 1
+                      deptInfo:
+                        sexValue: 男
+                        createtime: '2026-08-28 11:14:37'
+                        logintime: '2026-10-23 08:21:47'
+                        firstlogin: '2026-09-02 07:28:19'
+                        sex: 1
+                        loginDevice: '-1'
+                        type: 0
+                        jobtype: 0
+                        nickname: 用户_xxxxxxxx
+                        name: <姓名>
+                        typeValue: 学生
+                        id: <userId>
+                        schoolName: 电子科技大学中山学院
+                        studentNum: <学号>
+                        account: <学号>
+                        status: 1
+                      accessToken: <UUID v4，用于后续请求的 Authorization 头>
+                      firstLogin: false
+                      mapWebType: '1'
+                      mapToken: <服务端下发的地图 key>
+                    message: 登录成功
+                    success: true
+  /appUser/getUserInfo:
+    get:
+      tags:
+      - appUser
+      summary: 获取当前用户信息
+      description: '获取登录用户的详细资料（院系、学号、身份类型等）。
+
+
+        返回的字段与登录响应里的 `deptInfo` 完全一致。'
+      operationId: get_appUser_getUserInfo
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                userinfo:
+                  summary: 当前用户信息
+                  value: &id002
+                    code: 200
+                    data:
+                      userInfo:
+                        sexValue: 男
+                        createtime: '2026-08-28 11:14:37'
+                        logintime: '2026-10-23 08:21:47'
+                        firstlogin: '2026-09-02 07:28:19'
+                        sex: 1
+                        loginDevice: '-1'
+                        type: 0
+                        jobtype: 0
+                        nickname: 用户_xxxxxxxx
+                        name: <姓名>
+                        typeValue: 学生
+                        id: <userId>
+                        schoolName: 电子科技大学中山学院
+                        studentNum: <学号>
+                        account: <学号>
+                        status: 1
+                    message: 获取用户信息成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appUser/getUserPhotoURL:
+    post:
+      tags:
+      - appUser
+      summary: 获取用户头像
+      description: '返回 `attachment.filepath`。用户未上传头像时所有字段为空字符串。
+
+
+        头像 URL 拼接：`https://zslf.zsc.edu.cn/userfiles/` + `filepath`。'
+      operationId: post_appUser_getUserPhotoURL
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                userinfo:
+                  summary: 当前用户信息
+                  value: *id002
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appUser/checkUserVerification:
+    post:
+      tags:
+      - appUser
+      summary: 检查用户身份证
+      description: '返回 `{isExistIDCard: bool}`，用于判断用户是否已完成实名认证。'
+      operationId: post_appUser_checkUserVerification
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appUser/getUserArctileStatis:
+    post:
+      tags:
+      - appUser
+      summary: 用户内容统计
+      description: 返回 `{collect, comment, history}`，分别是收藏数、评论数、浏览历史数。
+      operationId: post_appUser_getUserArctileStatis
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appUser/checkPhone:
+    post:
+      tags:
+      - appUser
+      summary: 校验手机号（取验证码）
+      description: 忘记密码流程第一步。缺 `smsCode` 时返回「请输入正确的验证码!」。
+      operationId: post_appUser_checkPhone
+      parameters:
+      - name: phone
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 手机号
+      - name: smsCode
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 短信验证码
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appUser/modifyPassword:
+    post:
+      tags:
+      - appUser
+      summary: 修改密码
+      description: '**服务端密码策略**：长度 ≥ 8，且必须同时包含字母、数字、符号。
+
+
+        历史上存在的 6 位纯数字旧密码仍可登录，但**不能再被设置为新密码**。'
+      operationId: post_appUser_modifyPassword
+      parameters:
+      - name: newPassWord
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 新密码
+      - name: oldPassword
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 旧密码
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appUser/resetNewPassWord:
+    post:
+      tags:
+      - appUser
+      summary: 重置密码（无需旧密码）
+      description: '⚠️ **该接口不需要旧密码、不需要验证码**，只要 `newPassWord` + `userId` 就能改密。
+
+
+        bundle 中另有 `PUT` + JSON body 的写法，但**实测服务端不解析 body**，只认 `POST` + query —— 本文档按实测结论编写。'
+      operationId: post_appUser_resetNewPassWord
+      parameters:
+      - name: newPassWord
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 新密码
+      - name: userId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 用户 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appNotice/unreadNumber:
+    post:
+      tags:
+      - appNotice
+      summary: 未读消息数
+      description: '角标数字 = `unreadNumber + noticeMutualCount`。
+
+
+        App 端在页面 `onShow` 时触发，**没有定时轮询**。'
+      operationId: post_appNotice_unreadNumber
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                unread:
+                  summary: 未读消息数
+                  value:
+                    code: 200
+                    data:
+                      unreadNumber: 0
+                      noticeMutualCount: 0
+                    message: 获得该用户各种类型的未读通知条数成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appNotice/noticeListByType:
+    post:
+      tags:
+      - appNotice
+      summary: 按类型获取通知
+      description: 返回 `noticeList`。
+      operationId: post_appNotice_noticeListByType
+      parameters:
+      - name: type
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 通知类型（1 / 2 / 3 …）
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 条数
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                empty_list:
+                  summary: 空列表
+                  value: &id003
+                    code: 200
+                    data:
+                      list: []
+                    message: 获取成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appNotice/updateNoticeIsRead:
+    post:
+      tags:
+      - appNotice
+      summary: 标记通知已读
+      description: 无效 ID 返回 `code:400` + 「修改失败」。
+      operationId: post_appNotice_updateNoticeIsRead
+      parameters:
+      - name: noticeId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 通知 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appNotice/updateNoticeMutuaById:
+    post:
+      tags:
+      - appNotice
+      summary: 更新互动通知
+      description: 无效 ID 返回 `code:400` + 「id不存在」。
+      operationId: post_appNotice_updateNoticeMutuaById
+      parameters:
+      - name: noticeId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 通知 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /announcement/announcementList:
+    post:
+      tags:
+      - announcement
+      summary: 校园公告列表
+      description: 返回全量公告（实测约 180 KB）。`content` 字段是 HTML，包含 2019 年以来的历史公告。
+      operationId: post_announcement_announcementList
+      parameters:
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 公告类型
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appFind/getAppFindById:
+    post:
+      tags:
+      - appFind
+      summary: 发现页菜单树
+      description: 返回 `findList`（约 27 KB），三级菜单结构。字段含 `menuName` / `name` / `url` / `logo` / `menuLevel`
+        / `pids`。
+      operationId: post_appFind_getAppFindById
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appFind/getDictTips:
+    post:
+      tags:
+      - appFind
+      summary: 配置字典
+      description: '读取服务端下发的功能配置。
+
+
+        已实测的 key：
+
+
+        | code | 含义 | 返回值 |
+
+        |---|---|---|
+
+        | `schoolRun` | 校园跑开关 | `isOpen` = `"1"` 表示已开启 |
+
+        | `attendanceRadius` | 签到半径 | `radius` = `"40"`，单位米 |'
+      operationId: post_appFind_getDictTips
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 字典 key
+      - name: num
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 固定传 "1"
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                dict_tips:
+                  summary: 配置字典
+                  value:
+                    code: 200
+                    data:
+                      info:
+                      - code: '40'
+                        num: 1
+                        name: radius
+                        pid: 584
+                        id: '585'
+                    message: 获取成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsColumn/getCmsByModule:
+    post:
+      tags:
+      - appCmsColumn
+      summary: 按模块名获取栏目
+      description: '已实测可用的 `name` 值：
+
+
+        | name | 返回 | 说明 |
+
+        |---|---|---|
+
+        | `新生攻略` | `cmsColumnList`（多栏目） | 首页「新生攻略」宫格 |
+
+        | `学校动态` | `cmsColumn`（单栏目） | `id` 即首页顶部栏目 ID |
+
+
+        其它 name 返回 `code:400` 「获取栏目失败!」。'
+      operationId: post_appCmsColumn_getCmsByModule
+      parameters:
+      - name: name
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 模块名，如「新生攻略」「学校动态」
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                column_module:
+                  summary: 按模块名获取栏目
+                  value:
+                    code: 200
+                    data:
+                      cmsColumnList:
+                      - image: cf1c97558d344f029d891f8ddb1b464d
+                        keywords: ''
+                        module: 新生攻略
+                        isAudit: 1
+                        deptId: ''
+                        description: 食
+                        pId: b2ed01fb5c3e46e5aabe12ffbb8c0ed0
+                        sort: '0'
+                        delFlag: 1
+                        placeType: '2'
+                        createBy: '1'
+                        filepath: image202008/13/4770f378d8154d8f813481e9a1a8c2e7.png
+                        leaveMessage: 1
+                        createTime: '2020-08-13 12:22:53'
+                        name: 食
+                        id: ccac8b9462ae42eaab625cb69ccac428
+                        inMenu: 1
+                        pIds: '[0],[b2ed01fb5c3e46e5aabe12ffbb8c0ed0],'
+                    message: 获取栏目成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticle/getCmsArticleByColumnId:
+    post:
+      tags:
+      - appCmsArticle
+      summary: 按栏目取文章列表
+      description: '首页「校园动态」列表。实测单次返回可达 **487 KB**，建议 `limit` 取 10–20。
+
+
+        文章字段：`id` `title` `description` `content`(HTML) `hits` `isTopping` `creatTime` `updateTime` `columnId`
+        `getImgs` `place_type`。'
+      operationId: post_appCmsArticle_getCmsArticleByColumnId
+      parameters:
+      - name: offset
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: 条数
+      - name: cmsCloumnId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 栏目 ID（**服务端拼写少一个 n，照抄即可**）
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                article_list:
+                  summary: 文章列表
+                  value:
+                    code: 200
+                    data:
+                      cmsArticleList:
+                      - columnId: 1b2996d68a734e6f983593b5b495551b
+                        getImgs:
+                        - custype: <attachmentId>
+                          filetype: image/png
+                          filename: 640.png
+                          filepath: image202603/30/<hash>.png
+                          custable: sch_cms_article
+                          ctime: '1774842836000'
+                          id: <imageId>
+                        link: ''
+                        description: 沐浴春光，释放心灵。
+                        updateTime: '2026-03-30 11:59:51'
+                        title: 春日心理健步走来了，累计打卡有惊喜！
+                        delFlag: 1
+                        content: <section>…HTML…</section>
+                        creatBy: <userId>
+                        hits: 0
+                        isTopping: 0
+                        creatTime: '2026-03-30 11:59:51'
+                        updateBy: ''
+                        place_type: 0
+                        id: <articleId>
+                    message: 获取成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticle/articleDetailsById:
+    post:
+      tags:
+      - appCmsArticle
+      summary: 文章详情
+      description: 返回 `articleDetails.content`，为完整 HTML 正文。
+      operationId: post_appCmsArticle_articleDetailsById
+      parameters:
+      - name: articleId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 文章 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticle/articleDetailsByName:
+    post:
+      tags:
+      - appCmsArticle
+      summary: 按名称取文章
+      description: 用于服务协议、隐私政策等静态页面。
+      operationId: post_appCmsArticle_articleDetailsByName
+      parameters:
+      - name: articleName
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 文章名称，如「用户协议」
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticle/increaseHits:
+    post:
+      tags:
+      - appCmsArticle
+      summary: 增加阅读数
+      description: ⚠️ 该接口**返回空 body**（HTTP 200 但无 JSON 内容）。
+      operationId: post_appCmsArticle_increaseHits
+      parameters:
+      - name: articleId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 文章 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticle/articleHistory:
+    post:
+      tags:
+      - appCmsArticle
+      summary: 文章浏览历史
+      description: '返回 `{list: []}`。'
+      operationId: post_appCmsArticle_articleHistory
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                empty_list:
+                  summary: 空列表
+                  value: *id003
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticleLike/getCountLikeByAtricleId:
+    post:
+      tags:
+      - appCmsArticleLike
+      summary: 文章点赞数
+      description: 返回 `{count}`。
+      operationId: post_appCmsArticleLike_getCountLikeByAtricleId
+      parameters:
+      - name: articleId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 文章 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                like_count:
+                  summary: 文章点赞数
+                  value:
+                    code: 200
+                    data:
+                      count: 5
+                    message: 获取点赞信息成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticleLike/getCountByUid:
+    post:
+      tags:
+      - appCmsArticleLike
+      summary: 当前用户是否点赞
+      description: 已点赞返回 count，未点赞返回 `code:400` 「此用户没有点赞」。
+      operationId: post_appCmsArticleLike_getCountByUid
+      parameters:
+      - name: articleId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 文章 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCmsArticleLike/setArticleLike:
+    post:
+      tags:
+      - appCmsArticleLike
+      summary: 点赞 / 取消点赞
+      description: '返回 `{result: true, count}`。'
+      operationId: post_appCmsArticleLike_setArticleLike
+      parameters:
+      - name: articleId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 文章 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /adApi/getAdvertisement:
+    post:
+      tags:
+      - adApi
+      summary: 首页轮播图
+      description: 返回 `Advertisement[]`。图片地址 = `https://zslf.zsc.edu.cn/userfiles/` + `filepath`；跳转由 `jump_type`
+        / `adv_href` 决定。
+      operationId: post_adApi_getAdvertisement
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /business/getShopList:
+    post:
+      tags:
+      - business
+      summary: 商家列表
+      description: 实测 118 KB。含 `latitude`/`longitude`，可直接用于地图标注。
+      operationId: post_business_getShopList
+      parameters:
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 条数
+      - name: typeName
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 商家类型（实测该参数被忽略）
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /business/getActivityList:
+    post:
+      tags:
+      - business
+      summary: 商家活动列表
+      description: 实测 32 KB。
+      operationId: post_business_getActivityList
+      parameters:
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 条数
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appRecruit/getPluralismList:
+    post:
+      tags:
+      - appRecruit
+      summary: 兼职招聘列表
+      description: 实测 36 KB。含 `address` / `latitude` / `click` / `content`(HTML)。
+      operationId: post_appRecruit_getPluralismList
+      parameters:
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 条数
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 类型
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appRecommend/getRecommendList:
+    post:
+      tags:
+      - appRecommend
+      summary: 广场帖子列表
+      description: 「广场」页数据源，实测 344 KB。仅存在于 nvue bundle。
+      operationId: post_appRecommend_getRecommendList
+      parameters:
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 条数
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appRecommend/getRecommendTypeList:
+    post:
+      tags:
+      - appRecommend
+      summary: 广场帖子类型
+      description: 返回 `recommendTypeList`（打卡 / 安利 / …）。仅存在于 nvue bundle。
+      operationId: post_appRecommend_getRecommendTypeList
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appRecommend/getPartTimeDetail:
+    post:
+      tags:
+      - appRecommend
+      summary: 兼职详情
+      description: 无参时返回空 `data`。
+      operationId: post_appRecommend_getPartTimeDetail
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /recycle/getRecycleTypeList:
+    post:
+      tags:
+      - recycle
+      summary: 二手物品类型
+      description: 响应键名带 `get` 前缀：`getRecycleTypeList`。
+      operationId: post_recycle_getRecycleTypeList
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /recycle/getGoodsList:
+    post:
+      tags:
+      - recycle
+      summary: 二手物品列表
+      description: 实测 10 KB。`imgs` 数组内为附件对象。
+      operationId: post_recycle_getGoodsList
+      parameters:
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 条数
+      - name: typeId
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 类型 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /questionNaire/getQuestionNaireList:
+    post:
+      tags:
+      - questionNaire
+      summary: 问卷列表
+      description: 返回 `questionNaireList`。
+      operationId: post_questionNaire_getQuestionNaireList
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                empty_list:
+                  summary: 空列表
+                  value: *id003
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /questionNaire/getQuestionNaire:
+    post:
+      tags:
+      - questionNaire
+      summary: 问卷详情
+      description: 无效 ID 返回「获取调查问卷失败null」。
+      operationId: post_questionNaire_getQuestionNaire
+      parameters:
+      - name: questionNaireId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 问卷 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /questionNaire/getQuestionNaireAnswer:
+    post:
+      tags:
+      - questionNaire
+      summary: 问卷答案
+      description: 返回空 `data`。
+      operationId: post_questionNaire_getQuestionNaireAnswer
+      parameters:
+      - name: questionNaireId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 问卷 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /questionNaire/submitExam:
+    post:
+      tags:
+      - questionNaire
+      summary: 提交问卷
+      description: 空参返回「获取调查问卷失败null」。
+      operationId: post_questionNaire_submitExam
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /imChat/imchatData:
+    post:
+      tags:
+      - imChat
+      summary: 拉取客服聊天（全量）
+      description: '**无游标、无分页**，每次返回全部消息。
+
+
+        消息字段：`ctime` / `userId` / `content`；`userId === "admin"` 为我方（客服）。
+
+
+        App 端采用 **1 秒轮询**。'
+      operationId: post_imChat_imchatData
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /imChat/sendImData:
+    post:
+      tags:
+      - imChat
+      summary: 发送客服消息
+      description: 发送后返回**全量消息列表**（不是单条）。空参时只返回当前会话、不会发送。
+      operationId: post_imChat_sendImData
+      parameters:
+      - name: content
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 消息内容
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /AppOperator/selectOperatorMeal:
+    post:
+      tags:
+      - AppOperator
+      summary: 宽带套餐列表
+      description: 返回 `getOperatorMealList`（电信等运营商校园宽带套餐）。
+      operationId: post_AppOperator_selectOperatorMeal
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appFeedback/getFeedbackListById:
+    post:
+      tags:
+      - appFeedback
+      summary: 我的反馈列表
+      description: 响应键名 **`FeedbackList`**（大写 F）。
+      operationId: post_appFeedback_getFeedbackListById
+      parameters:
+      - name: userId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 用户 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                empty_list:
+                  summary: 空列表
+                  value: *id003
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appFeedback/addFeedback:
+    post:
+      tags:
+      - appFeedback
+      summary: 提交反馈
+      description: 空参返回「用户发布反馈失败」。需先调上传接口取图片路径。
+      operationId: post_appFeedback_addFeedback
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /mobileLogReport/addLog:
+    post:
+      tags:
+      - mobileLogReport
+      summary: 上报客户端日志
+      description: '少数走 **JSON body** 的接口之一。传 `{}` 即返回 `{success: true}`。'
+      operationId: post_mobileLogReport_addLog
+      requestBody:
+        required: false
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/getErrandList:
+    post:
+      tags:
+      - run
+      summary: 校园跑任务列表
+      description: '⚠️ **不带参数会超时**（服务端会一直等待），四个参数都要传。
+
+
+        注意该组接口 base URL **没有 `/app` 前缀**。'
+      operationId: post_run_errand_getErrandList
+      parameters:
+      - name: userId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 用户 ID
+      - name: offset
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: 偏移
+      - name: limit
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: 条数
+      - name: isFinish
+        in: query
+        required: true
+        schema:
+          type: integer
+        description: 是否已完成（0 / 1）
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                empty_list:
+                  summary: 空列表
+                  value: *id003
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/getErrandDetail:
+    post:
+      tags:
+      - run
+      summary: 任务详情
+      description: 空 ID 返回 `code:400`。
+      operationId: post_run_errand_getErrandDetail
+      parameters:
+      - name: trid
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 任务 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/getUserErrandTrackRecord:
+    post:
+      tags:
+      - run
+      summary: 我的跑步记录
+      description: 返回 `userErrandTrackRecord`。
+      operationId: post_run_errand_getUserErrandTrackRecord
+      parameters:
+      - name: userId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 用户 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/getTrackByTrid:
+    post:
+      tags:
+      - run
+      summary: 轨迹点
+      description: 返回 `trackPointList`。
+      operationId: post_run_errand_getTrackByTrid
+      parameters:
+      - name: trid
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 任务 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/getTrackRecordByTrid:
+    post:
+      tags:
+      - run
+      summary: 轨迹记录
+      description: 返回 `recordMap`。
+      operationId: post_run_errand_getTrackRecordByTrid
+      parameters:
+      - name: trid
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 任务 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/punch:
+    post:
+      tags:
+      - run
+      summary: 打卡
+      description: 空参返回 `code:400`（message 为空字符串）。
+      operationId: post_run_errand_punch
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/quickSave:
+    post:
+      tags:
+      - run
+      summary: 跑步数据快存
+      description: '**走 JSON body**，超时 15 秒。空 body 返回「trid不能为空」。'
+      operationId: post_run_errand_quickSave
+      requestBody:
+        required: true
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trid:
+                  type: string
+                  description: 任务 ID（**必填**）
+              required:
+              - trid
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/syncSportData:
+    post:
+      tags:
+      - run
+      summary: 同步运动数据
+      description: '**走 JSON body**，超时 30 秒。'
+      operationId: post_run_errand_syncSportData
+      requestBody:
+        required: true
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trid:
+                  type: string
+                  description: 任务 ID（**必填**）
+              required:
+              - trid
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/reportLocation:
+    post:
+      tags:
+      - run
+      summary: 上报位置
+      description: '**走 JSON body**，超时 30 秒。'
+      operationId: post_run_errand_reportLocation
+      requestBody:
+        required: true
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trid:
+                  type: string
+                  description: 任务 ID（**必填**）
+              required:
+              - trid
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/errand/addErrandTrackByData:
+    post:
+      tags:
+      - run
+      summary: 批量上报轨迹
+      description: '**走 JSON body**，超时 30 秒。'
+      operationId: post_run_errand_addErrandTrackByData
+      requestBody:
+        required: true
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trid:
+                  type: string
+                  description: 任务 ID（**必填**）
+              required:
+              - trid
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/attendanceRecord/getAttendanceByRollCallId:
+    post:
+      tags:
+      - run
+      summary: 获取签到信息
+      description: 空参返回「获取签到信息失败，参数缺失」。
+      operationId: post_run_attendanceRecord_getAttendanceByRollCallId
+      parameters:
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 点名 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/attendanceRecord/addAttendance:
+    post:
+      tags:
+      - run
+      summary: 签到
+      description: 空参返回 `code:400`（message 为空字符串）。
+      operationId: post_run_attendanceRecord_addAttendance
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/getSiteList:
+    post:
+      tags:
+      - run
+      summary: 场馆列表
+      description: '`venueStatus=1` 返回足球场、排球场等真实场地；无参返回空列表。'
+      operationId: post_run_site_getSiteList
+      parameters:
+      - name: venueStatus
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 场馆状态，传 `1` 才有数据
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                site_list:
+                  summary: 场馆列表
+                  value:
+                    code: 200
+                    data:
+                      siteList:
+                      - create_by: '1'
+                        del_flag: 1
+                        address: 山底
+                        create_time: '2021-05-27 17:57:19'
+                        is_enable: 0
+                        name: 足球场（大场）
+                        remark: ''
+                        id: 0e474d38d86b9c46d91111d0e9e2775d
+                        sort: 3
+                        status: 1
+                    message: 获取场地列表成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/getSiteInfo:
+    post:
+      tags:
+      - run
+      summary: 场馆详情
+      description: 返回空 `data`。
+      operationId: post_run_site_getSiteInfo
+      parameters:
+      - name: siteId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 场馆 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/getSiteTimeList:
+    post:
+      tags:
+      - run
+      summary: 场馆可预约时段
+      description: 未开放时返回「当前日期未开放预约。」
+      operationId: post_run_site_getSiteTimeList
+      parameters:
+      - name: siteId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 场馆 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/getSiteApplyList:
+    post:
+      tags:
+      - run
+      summary: 我的预约列表
+      description: 返回 `applyList`。
+      operationId: post_run_site_getSiteApplyList
+      parameters:
+      - name: userId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 用户 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/getApplyDetail:
+    post:
+      tags:
+      - run
+      summary: 预约详情
+      description: ⚠️ 无效 ID → **HTTP 500**（服务端无空判）。
+      operationId: post_run_site_getApplyDetail
+      parameters:
+      - name: applyId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 预约 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/addApply:
+    post:
+      tags:
+      - run
+      summary: 提交预约申请
+      description: 空参返回「申请失败null」。
+      operationId: post_run_site_addApply
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/addApplyDenfition:
+    post:
+      tags:
+      - run
+      summary: 预约定义
+      description: 空参返回「申请不存在！」（服务端拼写为 `Denfition`）。
+      operationId: post_run_site_addApplyDenfition
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/addApplySelectTime:
+    post:
+      tags:
+      - run
+      summary: 选择预约时段
+      description: ⚠️ 空参 → **HTTP 500**（服务端无空判）。
+      operationId: post_run_site_addApplySelectTime
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/addSiteApplyRelated:
+    post:
+      tags:
+      - run
+      summary: 预约关联
+      description: 空参返回 SQL 异常：`Field 'apply_id' doesn't have a default value`。
+      operationId: post_run_site_addSiteApplyRelated
+      parameters:
+      - name: apply_id
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 预约 ID（**必填**，否则 SQL 异常）
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/afterUploadFile:
+    post:
+      tags:
+      - run
+      summary: 预约附件后处理
+      description: 空参返回「申请不存在」。
+      operationId: post_run_site_afterUploadFile
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/site/intProcess:
+    post:
+      tags:
+      - run
+      summary: 预约流程状态
+      description: 无需参数即返回 `code:200` + `data:[]`。
+      operationId: post_run_site_intProcess
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/physical/getPhysicalTestList:
+    post:
+      tags:
+      - run
+      summary: 体测场次列表
+      description: ⚠️ 实测该接口返回**数据库连接池超时异常栈**（服务端缺陷，非本文档问题）。
+      operationId: post_run_physical_getPhysicalTestList
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/physical/getPhysicalUserCount:
+    post:
+      tags:
+      - run
+      summary: 体测人数统计
+      description: 返回以**日期为 key** 的对象，值为 `{date, algCount, albCount, mlbCount, mlgCount}`。
+      operationId: post_run_physical_getPhysicalUserCount
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                physical_count:
+                  summary: 体测人数统计（按日期分组）
+                  value:
+                    code: 200
+                    data:
+                      '2024-05-25':
+                        date: '2024-05-25'
+                        algCount: 297
+                        albCount: 360
+                        mlbCount: 272
+                        mlgCount: 259
+                    message: ''
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/physical/getPhysicalMaInfo:
+    post:
+      tags:
+      - run
+      summary: 体测报名信息
+      description: 返回 `{mcount, pcount}`。
+      operationId: post_run_physical_getPhysicalMaInfo
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                physical_ma:
+                  summary: 体测报名信息
+                  value:
+                    code: 200
+                    data:
+                      mcount: '5'
+                      pcount: 0
+                    message: 查询成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/physical/getPhysicalRelatedItemsList:
+    post:
+      tags:
+      - run
+      summary: 体测项目列表
+      description: 返回 `getRelatedItemsList`（坐位体前屈等），实测 412 KB。
+      operationId: post_run_physical_getPhysicalRelatedItemsList
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/physical/addPhysicalUser:
+    post:
+      tags:
+      - run
+      summary: 体测报名
+      description: 空参返回「预约失败，请尝试升级APP版本」。
+      operationId: post_run_physical_addPhysicalUser
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /run/physical/cancelPhysical:
+    post:
+      tags:
+      - run
+      summary: 取消体测报名
+      description: 无报名时返回「取消失败」。
+      operationId: post_run_physical_cancelPhysical
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /sign/getSumIntegral:
+    post:
+      tags:
+      - sign
+      summary: 总积分
+      description: 返回 `{sum}`。
+      operationId: post_sign_getSumIntegral
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                sum_integral:
+                  summary: 总积分
+                  value:
+                    code: 200
+                    data:
+                      sum: 0
+                    message: 获取用户积分成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /sign/getUserSign:
+    post:
+      tags:
+      - sign
+      summary: 签到日历
+      description: 返回近 7 天签到日历 `resList[{integral, day, isSignIn}]` 与 `continuousSignCount`。
+      operationId: post_sign_getUserSign
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                sign_calendar:
+                  summary: 近 7 天签到日历
+                  value:
+                    code: 200
+                    data:
+                      resList:
+                      - integral: 20
+                        day: 10-19
+                        isSignIn: 0
+                      - integral: 20
+                        day: 10-20
+                        isSignIn: 0
+                      - integral: 22
+                        day: 10-24
+                        isSignIn: 0
+                      - integral: 24
+                        day: 10-25
+                        isSignIn: 0
+                      continuousSignCount: 0
+                    message: 该用户签到信息获取成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /sign/getIntegralDetailByUserId:
+    post:
+      tags:
+      - sign
+      summary: 积分明细
+      description: 返回 `integralDetailList`。
+      operationId: post_sign_getIntegralDetailByUserId
+      parameters:
+      - name: userId
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 用户 ID
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /sign/addUserSign:
+    post:
+      tags:
+      - sign
+      summary: 每日签到
+      description: '⚠️ 空参 → **HTTP 500**（服务端无空判）。
+
+
+        调用即发放积分，请谨慎测试。'
+      operationId: post_sign_addUserSign
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /verification/getInternetInfo:
+    post:
+      tags:
+      - verification
+      summary: 查询校园网在线状态
+      description: '返回 `{status, massage}`。`status = "0"` 表示当前不在线。
+
+
+        注意服务端把 `message` 拼成了 **`massage`**。'
+      operationId: post_verification_getInternetInfo
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                internet_info:
+                  summary: 校园网在线状态
+                  value:
+                    code: 200
+                    data:
+                      status: '0'
+                      massage: 未查询到用户信息
+                    message: ''
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /verification/getRedirectUrl:
+    post:
+      tags:
+      - verification
+      summary: 获取 Portal 跳转地址
+      description: 返回校园网 Portal 探测地址，用于判断是否需要网页认证。
+      operationId: post_verification_getRedirectUrl
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                redirect:
+                  summary: Portal 跳转地址
+                  value:
+                    code: 200
+                    data:
+                      addr: http://9.9.9.9
+                      checkStr: wlanuserip
+                    message: 获取成功
+                    success: true
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /verification/appOffline:
+    post:
+      tags:
+      - verification
+      summary: 校园网下线
+      description: '返回 `{status: "1", msg: "下线成功"}`。
+
+
+        **不影响 App 的 token 登录态**（实测复查通过）。'
+      operationId: post_verification_appOffline
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /verification/scanLogin:
+    post:
+      tags:
+      - verification
+      summary: 扫码登录（网页端）
+      description: 网页端扫码登录的轮询接口。二维码失效时返回 `data.obj.{msg, successFlag}`。
+      operationId: post_verification_scanLogin
+      parameters:
+      - name: uuid
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 二维码 uuid
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /verification/appLogin:
+    post:
+      tags:
+      - verification
+      summary: 校园网一键登录
+      description: '⚠️ 该接口要求 **JSON body**（空 body 报 `A JSONObject text must begin with ''{''`）。
+
+
+        具体字段本文档未测明。'
+      operationId: post_verification_appLogin
+      requestBody:
+        required: false
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /verification/appDialInLogin:
+    post:
+      tags:
+      - verification
+      summary: 校园网拨号登录
+      description: '空参返回 `{status: "0", msg: "登录失败：no redirect 01"}`。'
+      operationId: post_verification_appDialInLogin
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /campusNetwork/checkPhone:
+    post:
+      tags:
+      - campusNetwork
+      summary: 校验宽带手机号
+      description: 空手机号返回「请输入正确的手机号码!」。
+      operationId: post_campusNetwork_checkPhone
+      parameters:
+      - name: phone
+        in: query
+        required: true
+        schema:
+          type: string
+        description: 手机号
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /campusNetwork/getOperatorAccountByIDCard:
+    post:
+      tags:
+      - campusNetwork
+      summary: 获取宽带账号
+      description: '返回 `operatorAccount[{typeStatus, id, operatorAccount}]`。
+
+
+        ⚠️ **该接口无需参数即返回当前用户的宽带账号（PII）**，调用时请注意。'
+      operationId: post_campusNetwork_getOperatorAccountByIDCard
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /campusNetwork/updateOperatorPasswordById:
+    post:
+      tags:
+      - campusNetwork
+      summary: 更新宽带密码
+      description: 空参返回「更新宽带信息失败.」。
+      operationId: post_campusNetwork_updateOperatorPasswordById
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /appCommomUpload/uploadIdCardImg:
+    post:
+      tags:
+      - upload
+      summary: 图片上传（multipart）
+      description: '上传成功后 `data` 是相对路径，拼 `https://zslf.zsc.edu.cn/userfiles/` 访问。
+
+
+        **必须带 token**，否则 HTTP 401。'
+      operationId: post_appCommomUpload_uploadIdCardImg
+      requestBody:
+        required: true
+        description: '**multipart/form-data 上传**'
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 图片文件
+                childType:
+                  type: string
+                  description: 固定 `feedbackImage`
+                tablename:
+                  type: string
+                  description: 固定 `sch_feedback`
+                tableId:
+                  type: string
+                  description: userId
+              required:
+              - file
+              - childType
+              - tablename
+              - tableId
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                upload_ok:
+                  summary: 上传成功
+                  value:
+                    msg: 上传成功
+                    code: 200
+                    data: image202610/23/<hash>.png
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /checkVersion:
+    get:
+      tags:
+      - version
+      summary: 检查版本更新
+      description: '**裸请求即可，无需 token。**
+
+
+        ⚠️ 服务端当前 advertised 版本 `1.0.79` / appid `__UNI__60FDE48`，比被分析的 APK（`1.0.83` / `__UNI__A8FC317`）更旧。
+
+
+        APK 直下地址：`https://zslf.zsc.edu.cn/app/slm/zslf.apk`。'
+      operationId: get_checkVersion
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+              examples:
+                check_version:
+                  summary: 版本信息
+                  value:
+                    code: 200
+                    data:
+                      is_silently: false
+                      store_list: []
+                      contents: 优化跑步保存问题
+                      appid: __UNI__60FDE48
+                      is_mandatory: false
+                      title: 版本更新
+                      type: native_app
+                      version: 1.0.79
+                      url: https://zslf.zsc.edu.cn/app/slm/zslf.apk
+                      platform:
+                      - android
+                    message: ''
+                    success: true
+  /member/user/reset-password:
+    put:
+      tags:
+      - member
+      summary: 重置密码（新版 · 预留）
+      description: '⚠️ **未实测。**
+
+
+        仅存在于 nvue bundle 的 API 定义层，全包**零调用点**（预留死接口）。
+
+
+        实际在用的重置密码接口是 `POST /appUser/resetNewPassWord`。'
+      operationId: put_member_user_reset-password
+      requestBody:
+        required: false
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+  /member/user/update-mobile:
+    put:
+      tags:
+      - member
+      summary: 更换绑定手机（新版 · 预留）
+      description: '⚠️ **未实测。**
+
+
+        仅存在于 nvue bundle 的 API 定义层，全包**零调用点**（预留死接口）。
+
+
+        当前版本 App **没有**更换绑定手机号功能。'
+      operationId: put_member_user_update-mobile
+      requestBody:
+        required: false
+        description: '**该接口参数走 JSON body**（全站仅少数接口如此）'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: 业务响应。**注意：HTTP 200 也可能是业务错误**，务必判 `body.code === 200`
+          content:
+            application/json:
+              schema: *id001
+        '401':
+          description: 未登录 / token 无效。**鉴权失败走 HTTP 401，body 为空**
+      security:
+      - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: UUID v4
+      description: '**实际是裸 token，不要加 `Bearer ` 前缀。**
+
+
+        即 `Authorization: <accessToken>`，token 从 `POST /login` 的响应 `data.accessToken` 获取。
+
+
+        服务端严格校验：无效 token 返回 HTTP 401。无刷新机制，失效需重新登录。'
+  schemas:
+    Envelope: *id001
+    LoginRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          description: 学号 / 账号
+          example: <your-student-id>
+        password:
+          type: string
+          description: 明文口令
+          example: <your-password>
+security:
+- bearerAuth: []

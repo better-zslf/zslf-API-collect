@@ -1,0 +1,13 @@
+# 本地临时文件
+*.tmp
+tmp/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 绝不要提交任何凭据
+*.env
+.env
+*token*
+*secret*
